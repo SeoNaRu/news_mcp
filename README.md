@@ -1,107 +1,110 @@
-# Guardian News MCP Server
+## Guardian News MCP Server
+High-performance MCP (Model Context Protocol) server for advanced news analysis using The Guardian API.
 
-The Guardian API를 사용하여 최신 뉴스를 검색할 수 있는 MCP (Model Context Protocol) 서버입니다.
+This project provides advanced features such as detailed news searches, trend analysis over time, related topic discovery, and full article text extraction. It's designed for speed and efficiency through strategic caching.
 
-## 기능
+### ✨ Key Features
+- **Detailed News Search**: Perform sophisticated news searches by combining keywords, specific sections, and date ranges.
+- **News Trend Analysis**: Track the volume of news coverage for any topic over time with time-series data.
+- **Related Topic Analysis**: Discover related keywords and context by analyzing the most frequent tags in search results.
+- **Full Article Text Extraction**: Scrape the full text content from any article URL.
+- **High-Performance Caching**: Minimizes API calls and improves response speed with data-specific caches.
 
-- **뉴스 검색**: 특정 키워드로 Guardian API에서 최신 뉴스 검색
-- **서비스 상태 확인**: API 키 설정 상태 및 서비스 상태 확인
-- **도구 정의 제공**: MCP 도구 정의를 JSON 형식으로 제공
+### 🛠️ Tech Stack
+- **MCP Framework**: FastMCP
+- **Data Validation**: Pydantic
+- **HTTP Client**: Requests
+- **Web Scraping**: BeautifulSoup4, lxml
+- **Caching**: cachetools
+- **Date Utilities**: python-dateutil
+- **Environment**: Python-dotenv
 
-## 설치 및 설정
-
-### 1. 의존성 설치
+### 🚀 Installation & Setup
+1) Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-또는 uv를 사용하는 경우:
+> Note: If you use uv, you can install dependencies with `uv sync`.
 
-```bash
-uv sync
-```
+2) Set Up Environment Variables
 
-### 2. 환경 변수 설정
-
-`.env` 파일을 생성하고 Guardian API 키를 설정하세요:
+Create a `.env` file in the project's root directory and set your Guardian API key.
 
 ```env
 GUARDIAN_API_KEY=your_guardian_api_key_here
 ```
 
-Guardian API 키는 [The Guardian Open Platform](https://open-platform.theguardian.com/)에서 무료로 발급받을 수 있습니다.
+You can get a free API key from The Guardian Open Platform.
 
-### 3. 서버 실행
+3) Run the Server
 
 ```bash
 python -m src.main
 ```
 
-## 사용 가능한 도구
+### 🧰 Available Tools (API Reference)
 
-### 1. `health`
-서비스 상태를 확인합니다.
+#### health
+- **Description**: Checks the current status of the service and API key configuration.
+- **Parameters**: None
+- **Returns**: Service status object
 
-**매개변수**: 없음
+#### search_news_tool
+- **Description**: Searches for news articles using various conditions.
+- **Parameters**:
+  - `query` (string, required): The keyword to search for.
+  - `page_size` (integer, optional): Number of articles (Default: 5, Max: 50).
+  - `section` (string, optional): Section to search within (e.g., `technology`).
+  - `from_date` (string, optional): Start date (YYYY-MM-DD).
+  - `to_date` (string, optional): End date (YYYY-MM-DD).
+- **Returns**: Array of article objects
 
-**반환값**:
-```json
-{
-  "status": "ok",
-  "environment": {
-    "guardian_api_key": "설정됨",
-    "api_key_preview": "e8bf1e48-7..."
-  }
-}
-```
+#### get_sections_tool
+- **Description**: Retrieves a list of all available news sections for searching.
+- **Parameters**: None
+- **Returns**: Array of section objects
 
-### 2. `search_news_tool`
-특정 키워드로 뉴스를 검색합니다.
+#### get_full_article_text_tool
+- **Description**: Extracts the full body text from a given article URL.
+- **Parameters**:
+  - `url` (string, required): Full URL of the article to scrape.
+- **Returns**: Object containing the article URL and its full text
 
-**매개변수**:
-- `query` (필수): 검색할 뉴스 키워드
-- `page_size` (선택): 가져올 기사의 수 (기본값: 5, 최대: 50)
+#### get_news_trend_tool
+- **Description**: Analyzes the monthly news coverage trend for a specific keyword.
+- **Parameters**:
+  - `query` (string, required): Keyword to analyze.
+  - `start_date` (string, required): Start date (YYYY-MM-DD).
+  - `end_date` (string, required): End date (YYYY-MM-DD).
+- **Returns**: Array of objects `{ period: YYYY-MM, article_count: number }`
 
-**반환값**:
-```json
-{
-  "articles": [
-    {
-      "headline": "뉴스 제목",
-      "summary": "뉴스 요약",
-      "url": "https://www.theguardian.com/..."
-    }
-  ]
-}
-```
+#### get_related_topics_tool
+- **Description**: Analyzes and returns the most frequent related topics (tags) for a given keyword.
+- **Parameters**:
+  - `query` (string, required): Keyword to analyze.
+  - `page_size` (integer, optional): Number of recent articles to analyze (Default: 20).
+- **Returns**: Array of `{ topic, count }`
 
-### 3. `get_tool_definitions`
-MCP 도구 정의를 JSON 형식으로 제공합니다.
+#### get_tool_definitions
+- **Description**: Provides the JSON definitions for all tools currently available on the server.
+- **Parameters**: None
 
-**매개변수**: 없음
+### 📁 Project Structure
 
-## 프로젝트 구조
-
-```
+```text
 mcp-guardian-news/
 ├── src/
-│   ├── main.py          # MCP 서버 메인 파일
-│   └── tools.py         # Guardian API 호출 도구
-├── requirements.txt     # Python 의존성
-├── pyproject.toml       # 프로젝트 설정
-├── tool_definitions.json # MCP 도구 정의
-├── .gitignore          # Git 무시 파일
-└── README.md           # 프로젝트 문서
+│   ├── __init__.py
+│   ├── main.py          # Main MCP server file
+│   └── tools.py         # Tools for calling the Guardian API
+├── .env                 # Environment variables file (API Key, etc.)
+├── requirements.txt     # Python dependencies
+├── pyproject.toml       # Project configuration
+├── .gitignore           # Git ignore file
+└── README.md            # Project documentation
 ```
 
-## 기술 스택
-
-- **FastMCP**: MCP 서버 구현
-- **Pydantic**: 데이터 검증 및 직렬화
-- **Requests**: HTTP API 호출
-- **Python-dotenv**: 환경 변수 관리
-
-## 라이선스
-
-MIT License
+### 📄 License
+This project is licensed under the MIT License.

@@ -7,7 +7,7 @@ import sys
 from fastmcp import FastMCP
 from pydantic import BaseModel, Field
 # --- 👇 수정된 부분: get_available_sections를 import에 추가 ---
-from .tools import search_news, get_available_sections, get_full_article_text
+from .tools import search_news, get_available_sections, get_full_article_text, get_news_trend, get_related_topics
 from typing import Optional
 
 import os
@@ -19,6 +19,15 @@ load_dotenv()
 # FastMCP 객체 생성
 mcp = FastMCP()
 
+class RelatedTopicsRequest(BaseModel):
+    query: str = Field(..., description="연관 토픽을 분석할 뉴스 키워드")
+    page_size: int = Field(20, description="분석할 최신 기사 수 (기본값: 20, 최대: 50)", ge=1, le=50)
+
+
+class NewsTrendRequest(BaseModel):
+    query: str = Field(..., description="검색할 뉴스 키워드 (예: '인공지능', '기술', '정치')")
+    start_date: str = Field(..., description="검색 시작일 (YYYY-MM-DD 형식, 예: '2023-10-01')")
+    end_date: str = Field(..., description="검색 종료일 (YYYY-MM-DD 형식, 예: '2023-10-27')")
 
 class ArticleRequest(BaseModel):
     url: str = Field(..., description="본문을 가져올 기사의 URL")
@@ -31,6 +40,21 @@ class SearchRequest(BaseModel):
     to_date: Optional[str] = Field(None, description="검색 종료일 (YYYY-MM-DD 형식, 예: '2023-10-27')")
 
 # 실제 함수들 (MCP 도구와 분리)
+async def get_related_topics_impl(req: RelatedTopicsRequest):
+    """실제 연관 토픽 분석 구현"""
+    try:
+        return await asyncio.to_thread(get_related_topics, req.query, req.page_size)
+    except Exception as e:
+        return {"error": f"연관 토픽 분석 중 오류가 발생했습니다: {str(e)}"}
+
+async def get_news_trend_impl(req: NewsTrendRequest):
+    """실제 뉴스 트렌드 조회 구현"""
+    try:
+        result = get_news_trend(req.query, req.start_date, req.end_date)
+        return result
+    except Exception as e:
+        return {"error": f"뉴스 트렌드 조회 중 오류가 발생했습니다: {str(e)}"}
+
 async def search_news_impl(req: SearchRequest):
     """실제 뉴스 검색 구현"""
 
@@ -115,6 +139,28 @@ async def get_tool_definitions_impl():
                 },
                 "required": ["url"]
             }
+        },
+        {
+            "name": "get_news_trend_tool",
+            "description": "주어진 기간 동안 특정 키워드에 대한 월별 뉴스 기사 수를 집계하여 트렌드 데이터를 반환합니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "검색할 뉴스 키워드 (예: '인공지능', '기술', '정치')"},
+                    "start_date": {"type": "string", "description": "검색 시작일 (YYYY-MM-DD 형식, 예: '2023-10-01')"},
+                    "end_date": {"type": "string", "description": "검색 종료일 (YYYY-MM-DD 형식, 예: '2023-10-27')"}
+                },
+                "required": ["query", "start_date", "end_date"]
+            }
+        },
+        {
+            "name": "get_related_topics_tool",
+            "description": "특정 키워드와 관련된 기사들의 태그를 분석하여 가장 빈도가 높은 연관 토픽을 반환합니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {"query": {"type": "string", "description": "연관 토픽을 분석할 뉴스 키워드"}, "page_size": {"type": "integer", "description": "분석할 최신 기사 수 (기본값: 20, 최대: 50)", "default": 20, "minimum": 1, "maximum": 50}},
+                "required": ["query"]
+            }
         }
     ]
     return {"tools": tools}
@@ -123,6 +169,12 @@ async def get_tool_definitions_impl():
 async def health():
     """서비스 상태 확인"""
     return await health_impl()
+
+@mcp.tool()
+async def get_related_topics_tool(query: str, page_size: int = 20):
+    """특정 키워드와 관련된 뉴스 토픽을 분석합니다."""
+    req = RelatedTopicsRequest(query=query, page_size=page_size)
+    return await get_related_topics_impl(req)
 
 @mcp.tool()
 async def get_sections_tool():
@@ -158,11 +210,17 @@ async def get_full_article_text_tool(url: str):
     req = ArticleRequest(url=url)
     return await get_full_article_text_impl(req)
 
+@mcp.tool()
+async def get_news_trend_tool(query: str, start_date: str, end_date: str):
+    """주어진 기간 동안 특정 키워드에 대한 월별 뉴스 기사 수를 집계하여 트렌드 데이터를 반환합니다."""
+    req = NewsTrendRequest(query=query, start_date=start_date, end_date=end_date)
+    return await get_news_trend_impl(req)
+
 async def main():
     """MCP 서버를 실행합니다."""
     print("MCP Guardian News Server starting...", file=sys.stderr)
     print("Server: guardian-news-service", file=sys.stderr)
-    print("Available tools: health,get_full_article_text_tool, search_news_tool, get_sections_tool, get_tool_definitions", file=sys.stderr)
+    print("Available tools: health,get_full_article_text_tool, search_news_tool, get_sections_tool, get_tool_definitions, get_news_trend_tool, get_related_topics_tool", file=sys.stderr)
     
     try:
         await mcp.run_stdio_async()

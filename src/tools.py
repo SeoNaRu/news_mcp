@@ -1,12 +1,18 @@
 # tools.py
-
 import os
 import requests
+import collections
 from bs4 import BeautifulSoup 
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
+from cachetools import cached, TTLCache
 
 
 GUARDIAN_API_URL = "https://content.guardianapis.com"
 
+sections_cache = TTLCache(maxsize=1, ttl=86400)    # 24시간 유지, 최대 1개 저장
+article_cache = TTLCache(maxsize=100, ttl=86400)   # 24시간 유지, 최대 100개 저장
+trend_cache = TTLCache(maxsize=100, ttl=3600)  
 # 실제 '도구' 함수
 def search_news(query: str, page_size: int = 5, section: str = None, from_date: str = None, to_date: str = None):
     """
@@ -24,9 +30,8 @@ def search_news(query: str, page_size: int = 5, section: str = None, from_date: 
 
     api_key = os.getenv("GUARDIAN_API_KEY")
     if not api_key:
-        return {"error": "GUARDIAN_API_KEY가 설정되지 않았습니다."}
+        return {"error": "The GUARDIAN_API_KEY environment variable is not set."}
 
-    # API 호출 파라미터 구성
     api_params = {
         "q": query,
         "api-key": api_key,
@@ -60,13 +65,14 @@ def search_news(query: str, page_size: int = 5, section: str = None, from_date: 
         return {"error": str(e)}
 
 
+@cached(cache=sections_cache)
 def get_available_sections():
     """
     The Guardian API에서 제공하는 모든 뉴스 섹션 목록을 가져옵니다.
     """
     api_key = os.getenv("GUARDIAN_API_KEY")
     if not api_key:
-        return {"error": "GUARDIAN_API_KEY가 설정되지 않았습니다."}
+        return {"error": "The GUARDIAN_API_KEY environment variable is not set."}
 
     api_url = f"{GUARDIAN_API_URL}/sections"
     api_params = {"api-key": api_key}
@@ -76,7 +82,6 @@ def get_available_sections():
         response.raise_for_status()
         results = response.json()["response"]["results"]
 
-        # 각 섹션의 id와 webTitle을 함께 제공하여 사용자 편의성을 높입니다.
         sections = [
             {"id": section.get("id"), "title": section.get("webTitle")}
             for section in results
@@ -85,6 +90,7 @@ def get_available_sections():
     except requests.exceptions.RequestException as e:
         return {"error": str(e)}
 
+@cached(cache=article_cache)
 def get_full_article_text(url: str):
     """
     주어진 URL의 웹 페이지에서 기사 본문을 스크래핑하여 반환합니다.
@@ -98,13 +104,11 @@ def get_full_article_text(url: str):
 
         soup = BeautifulSoup(response.text, 'lxml')
 
-        # The Guardian 기사 본문은 보통 data-gu-name="body" 속성을 가진 div 내부에 있습니다.
         article_body = soup.find('div', attrs={'data-gu-name': 'body'})
 
         if not article_body:
             return {"error": "기사 본문을 찾을 수 없습니다. 페이지 구조가 다를 수 있습니다."}
 
-        # 본문 내의 모든 p (문단) 태그의 텍스트를 합칩니다.
         paragraphs = article_body.find_all('p')
         full_text = "\n".join([p.get_text() for p in paragraphs])
 
@@ -114,3 +118,98 @@ def get_full_article_text(url: str):
         return {"error": f"URL에 접근하는 중 오류가 발생했습니다: {str(e)}"}
     except Exception as e:
         return {"error": f"기사 본문을 파싱하는 중 오류가 발생했습니다: {str(e)}"}
+
+@cached(cache=trend_cache)
+def get_news_trend(query: str, start_date_str: str, end_date_str: str):
+    """
+    주어진 기간 동안 특정 키워드에 대한 월별 뉴스 기사 수를 집계하여 트렌드 데이터를 반환합니다.
+    """
+    try:
+        start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
+        end_date = datetime.strptime(end_date_str, "%Y-%m-%d")
+        
+        trend_data = []
+        current_date = start_date
+
+        while current_date <= end_date:
+            # 해당 월의 시작일과 마지막일 계산
+            month_start = current_date.strftime("%Y-%m-%d")
+            month_end = (current_date + relativedelta(months=1) - relativedelta(days=1)).strftime("%Y-%m-%d")
+
+            # search_news 함수를 재활용하되, 기사 내용은 필요 없으므로 page_size=1로 설정
+            # 실제로는 total 숫자만 필요합니다.
+            api_key = os.getenv("GUARDIAN_API_KEY")
+            if not api_key:
+                return {"error": "The GUARDIAN_API_KEY environment variable is not set."}
+
+            api_params = {
+                "q": query,
+                "api-key": api_key,
+                "from-date": month_start,
+                "to-date": month_end,
+                "page-size": 1 # 내용이 아닌 총 개수만 필요하므로 최소한으로 요청
+            }
+            api_url = f"{GUARDIAN_API_URL}/search"
+            response = requests.get(api_url, params=api_params)
+            response.raise_for_status()
+
+            # 응답에서 총 기사 수('total')를 추출
+            total_articles = response.json()["response"]["total"]
+            
+            trend_data.append({
+                "period": current_date.strftime("%Y-%m"),
+                "article_count": total_articles
+            })
+
+            # 다음 달로 이동
+            current_date += relativedelta(months=1)
+
+        return {"trend": trend_data}
+
+    except Exception as e:
+        return {"error": f"뉴스 트렌드 분석 중 오류가 발생했습니다: {str(e)}"}
+
+def get_related_topics(query: str, page_size: int = 20):
+    """
+    특정 키워드와 관련된 기사들의 태그를 분석하여 가장 빈도가 높은 연관 토픽을 반환합니다.
+    """
+    try:
+        api_key = os.getenv("GUARDIAN_API_KEY")
+        if not api_key:
+            return {"error": "The GUARDIAN_API_KEY environment variable is not set."}
+
+        api_params = {
+            "q": query,
+            "api-key": api_key,
+            "page-size": page_size,
+            "show-tags": "keyword"  # 'keyword' 타입의 태그를 함께 요청
+        }
+        api_url = f"{GUARDIAN_API_URL}/search"
+        response = requests.get(api_url, params=api_params)
+        response.raise_for_status()
+
+        articles = response.json()["response"]["results"]
+        
+        if not articles:
+            return {"related_topics": []}
+
+        # 모든 기사의 모든 태그를 하나의 리스트에 수집
+        all_tags = []
+        for article in articles:
+            for tag in article.get("tags", []):
+                all_tags.append(tag['webTitle'])
+
+        # 태그의 빈도를 계산하여 가장 흔한 10개를 추출
+        tag_counts = collections.Counter(all_tags)
+        most_common_tags = tag_counts.most_common(10)
+
+        # 결과를 보기 좋은 형태로 가공
+        related_topics = [
+            {"topic": tag, "count": count}
+            for tag, count in most_common_tags
+        ]
+
+        return {"related_topics": related_topics}
+
+    except Exception as e:
+        return {"error": f"연관 토픽 분석 중 오류가 발생했습니다: {str(e)}"}
