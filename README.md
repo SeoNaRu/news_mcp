@@ -44,6 +44,24 @@ You can get a free API key from The Guardian Open Platform.
 python -m src.main
 ```
 
+### 🐳 Docker
+
+Build image:
+
+```bash
+docker build -t guardian-news-mcp:latest .
+```
+
+Run container (pass your API key via env):
+
+```bash
+docker run --rm \
+  -e GUARDIAN_API_KEY=your_guardian_api_key_here \
+  guardian-news-mcp:latest
+```
+
+Compose (optional): see `docker-compose.yml` example.
+
 ### 🧰 Available Tools (API Reference)
 
 #### health

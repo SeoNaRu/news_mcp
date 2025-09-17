@@ -1,0 +1,30 @@
+# Docker ignore
+
+# VCS
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.py[co]
+.Python
+
+# Environments
+.env
+.env.*
+.venv
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs/locks
+*.log
+*.lock
+
+# Node (just in case)
+node_modules/
